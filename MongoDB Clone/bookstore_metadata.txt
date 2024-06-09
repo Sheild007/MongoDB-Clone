@@ -1,0 +1,25 @@
+bookstore
+books
+1446676307 mongoDB\books.bson 0
+1446676309 mongoDB\books.bson 156
+1446676312 mongoDB\books.bson 330
+1446676338 mongoDB\books.bson 671
+1446676344 mongoDB\books.bson 863
+1446676346 mongoDB\books.bson 1033
+1446676355 mongoDB\books.bson 504
+1446676371 mongoDB\books.bson 1207
+1446676373 mongoDB\books.bson 1392
+1446676375 mongoDB\books.bson 1572
+1446676405 mongoDB\books.bson 1908
+1446676407 mongoDB\books.bson 2077
+1446676409 mongoDB\books.bson 2249
+1446676425 mongoDB\books.bson 1736
+1446676441 mongoDB\books.bson 2416
+1446676443 mongoDB\books.bson 2606
+1446676445 mongoDB\books.bson 2782
+1446676486 mongoDB\books.bson 2961
+1446676488 mongoDB\books.bson 3146
+end
+genre
+end
+end

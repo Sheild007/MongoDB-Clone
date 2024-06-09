@@ -1,0 +1,609 @@
+//#include <iostream>
+//#include <vector>
+//#include <string>
+//#include <cstdint>
+//
+//// Function to convert JSON-like data to BSON-like binary representation
+//vector<uint8_t> convertJSONtoBSON(const string& key, const vector<string>& values) {
+//    vector<uint8_t> bsonData;
+//
+//    // Start by appending BSON type for Array (0x04)
+//    bsonData.push_back(0x04);
+//
+//    // Append key name as null-terminated string
+//    bsonData.insert(bsonData.end(), key.begin(), key.end());
+//    bsonData.push_back(0x00);
+//
+//    // Calculate size of array
+//    uint32_t arraySize = 0;
+//    for (const auto& value : values) {
+//        // Calculate size for each string element in the array
+//        arraySize += value.size() + 1; // +1 for null-terminator
+//    }
+//
+//    // Append size of the array (including size of sub-elements and null terminators)
+//    bsonData.push_back(arraySize & 0xFF);
+//    bsonData.push_back((arraySize >> 8) & 0xFF);
+//    bsonData.push_back((arraySize >> 16) & 0xFF);
+//    bsonData.push_back((arraySize >> 24) & 0xFF);
+//
+//    // Append BSON type for String (0x02) for each element in the array
+//    for (size_t i = 0; i < values.size(); ++i) {
+//        bsonData.push_back(0x02);
+//
+//        // Append index as null-terminated string
+//        string index = to_string(i);
+//        bsonData.insert(bsonData.end(), index.begin(), index.end());
+//        bsonData.push_back(0x00);
+//
+//        // Append length of the string (including null-terminator)
+//        uint32_t strLength = values[i].size() + 1; // +1 for null-terminator
+//        bsonData.push_back(strLength & 0xFF);
+//        bsonData.push_back((strLength >> 8) & 0xFF);
+//        bsonData.push_back((strLength >> 16) & 0xFF);
+//        bsonData.push_back((strLength >> 24) & 0xFF);
+//
+//        // Append string data
+//        bsonData.insert(bsonData.end(), values[i].begin(), values[i].end());
+//        bsonData.push_back(0x00); // Null-terminator for string
+//    }
+//
+//    // Append null byte to indicate end of object
+//    bsonData.push_back(0x00);
+//
+//    return bsonData;
+//}
+//
+//int main() {
+//    // Example JSON-like data (one nested array within an object)
+//    string key = "BSON";
+//    vector<string> values = { "awesome", "5.05", "1986" };
+//
+//    // Convert JSON-like data to BSON-like binary representation
+//    vector<uint8_t> bsonData = convertJSONtoBSON(key, values);
+//
+//    // Print the BSON data in hexadecimal format
+//    cout << "BSON Data (Hexadecimal Representation): ";
+//    for (const auto& byte : bsonData) {
+//        printf("\\x%02X", byte);
+//    }
+//    cout << endl;
+//
+//    return 0;
+//}]
+
+
+// Function to convert BSON to JSON
+void convertBSONtoJSON(const char* filename) 
+{
+    ifstream file(filename, ios::binary);
+
+    if (!file.is_open()) {
+        cout << "Unable to open file!";
+        return;
+    }
+
+    // Read the file size
+    char fileSizeBytes[4];
+    file.read(fileSizeBytes, 4);
+    int fileSize = littleEndianToInt(fileSizeBytes);
+
+    vector<char> bsonData(fileSize);
+    file.read(bsonData.data(), fileSize);
+
+    file.close();
+
+    // Starting position for parsing
+    int currentPosition = 0; // Skipping the size field
+    cout << "{" << endl;
+    // Iterate through the BSON data
+    while (currentPosition < fileSize) 
+    {
+        // Read the data type
+        char dataType = bsonData[currentPosition];
+        currentPosition++;
+
+        if (dataType == 0x00) {
+            break; // End of document
+        }
+
+        // Read the field name
+        string fieldName;
+        while (bsonData[currentPosition] != 0x00) {
+            fieldName += bsonData[currentPosition];
+            currentPosition++;
+        }
+        currentPosition++; // Skip the null byte
+
+        // Process based on the data type
+        switch (dataType) {
+        case 0x01: { // Double
+            double doubleValue;
+            memcpy(&doubleValue, &bsonData[currentPosition], sizeof(double));
+            currentPosition += sizeof(double);
+            cout << "\"" << fieldName << "\": " << doubleValue << ", ";
+            break;
+        }
+        case 0x02: { // String
+            int stringSize = littleEndianToInt(&bsonData[currentPosition]);
+            currentPosition += 4;
+            string stringValue(&bsonData[currentPosition], stringSize - 1); // Exclude null terminator
+            currentPosition += stringSize;
+            cout << "\"" << fieldName << "\": \"" << stringValue << "\", ";
+            break;
+        }
+        case 0x04: { // Array
+            cout << "\"" << fieldName << "\": [ ";
+
+            // Read array size
+            int arraySize = littleEndianToInt(&bsonData[currentPosition]);
+            currentPosition += 4;
+
+            int arrayEndPosition = currentPosition + arraySize - 5; // Deducting array size and type bytes
+
+            // Process array elements
+            while (currentPosition < arrayEndPosition) {
+                // Read the data type of array element
+                char elementType = bsonData[currentPosition];
+                currentPosition++;
+
+                switch (elementType) {
+                case 0x01: { // Double
+                    currentPosition += 2;
+                    double doubleValue;
+                    memcpy(&doubleValue, &bsonData[currentPosition], sizeof(double));
+                    currentPosition += sizeof(double);
+                    cout << doubleValue << ", ";
+                    break;
+                }
+                case 0x02: { // String
+                    currentPosition+=2; // Skip the null byte
+                    int stringSize = littleEndianToInt(&bsonData[currentPosition]);
+                    currentPosition += 4;
+                    string stringValue(&bsonData[currentPosition], stringSize - 1); // Exclude null terminator
+                    currentPosition += stringSize;
+                    cout << "\"" << stringValue << "\", ";
+                    break;
+                }
+                case 0x10: { // 32-bit integer
+                    currentPosition += 2;
+                    int intValue = littleEndianToInt(&bsonData[currentPosition]);
+                    currentPosition += 4;
+                    cout << intValue << ", ";
+                    break;
+                }
+                         // Add cases for other types within the array as needed
+                         // ...
+                default:
+                    cout << "Unhandled array element type: " << static_cast<int>(elementType) << endl;
+                    break;
+                }
+            }
+
+            cout << "], ";
+            break;
+        }
+                 // Add cases for other BSON types
+        case 0x05: { // Binary data
+            int binarySize = littleEndianToInt(&bsonData[currentPosition]);
+            currentPosition += 4;
+
+            // Skipping binary data handling for simplicity in this example
+            currentPosition += binarySize;
+            break;
+        }
+        case 0x08: { // Boolean
+            bool boolValue = bsonData[currentPosition] != 0x00;
+            currentPosition++;
+            cout << "\"" << fieldName << "\": " << (boolValue ? "true" : "false") << ", ";
+            break;
+        }
+        case 0x10: // 32-bit integer
+        { 
+            // 32-bit integer
+			int intValue = littleEndianToInt(&bsonData[currentPosition]);
+			currentPosition += 4;
+			cout << "\"" << fieldName << "\": " << intValue << ", ";
+			break;
+        }
+        case 0x12: // 64-bit integer
+        {
+            int intValue = littleEndianToInt(&bsonData[currentPosition]);
+            currentPosition += 4;
+            cout << "\"" << fieldName << "\": " << intValue << ", ";
+            break;
+        }
+        case 0x13: // UTC datetime
+        {
+           
+        }
+        case 0x0A: // Null value
+        {
+
+        }
+        case 0x0D: // JavaScript code
+        {
+
+        }
+        case 0x0E: // Symbol
+        {
+
+        }
+        case 0x0F: // JavaScript code with scope
+        {
+
+        }
+        case 0x11: // 32-bit timestamp
+        {
+
+        }
+        case 0x07: // Object ID
+        {
+
+        }
+        case 0x0B: // Regular expression
+        {
+
+        }
+        case 0x0C: // DBPointer
+        {
+
+        }
+        case 0xFF: // Min key
+        {
+
+        } 
+        case 0x7F: // Max key
+        {
+
+        }
+        case 0x06: // Undefined value
+        {
+
+        }
+        //long long
+        case 0x18: // 64-bit integer
+        {
+
+        }
+        case 0x19: // Decimal128
+        {
+
+        }
+                 // Handle other BSON types as needed
+                 // ...
+
+        default:
+            cout << "Unhandled data type: " << static_cast<int>(dataType) << endl;
+            break;
+        }
+    }
+    cout << "\n}";
+    cout << endl;
+}
+
+
+
+
+
+
+  while (currentPosition < fileSize) 
+    {
+        int dataType = bsonData[currentPosition];
+        currentPosition++;
+       
+        if (dataType == END)
+			break;
+        string fieldname;
+        while (bsonData[currentPosition] != 0x00) 
+        {
+			fieldname += bsonData[currentPosition];
+			currentPosition++;
+		}
+        currentPosition++; 
+
+        switch (dataType)
+        {
+        case DOUBLE:
+        { // Double
+            double doubleValue;
+            memcpy(&doubleValue, &bsonData[currentPosition], sizeof(double));
+            currentPosition += sizeof(double);
+            JsonValue value = doubleValue;
+           
+            json[fieldname]= doubleValue;
+            break;
+        }
+        case STRING:
+        { // String
+            int stringSize = littleEndianToInt(&bsonData[currentPosition]);
+            currentPosition += 4;
+            string stringValue(&bsonData[currentPosition], stringSize - 1); // Exclude null terminator
+            currentPosition += stringSize;
+            
+            json[fieldname] = stringValue;
+            break;
+        }
+        case ARRAY:
+        { // Array
+            vector<JsonValue> array;
+            // Read array size
+             int arraySize = littleEndianToInt(&bsonData[currentPosition]);
+             currentPosition += 4;
+             int arrayEndPosition = currentPosition + arraySize - 5; // Deducting array size and type bytes
+             
+             			// Process array elements
+             while (currentPosition < arrayEndPosition) 
+             {
+             				// Read the data type of array element
+                int elementType = bsonData[currentPosition]; 
+                currentPosition++; 
+             	switch (elementType)
+                {
+                    case DOUBLE: 
+                        { // Double
+             			    currentPosition += 2;
+             				double doubleValue;
+             				memcpy(&doubleValue, &bsonData[currentPosition], sizeof(double));
+             				currentPosition += sizeof(double);
+             				array.push_back(doubleValue);
+             			    break;
+             			}
+             		case STRING: 
+                        { // String
+                               
+             			    currentPosition += 2; // Skip the null byte
+             				int stringSize = littleEndianToInt(&bsonData[currentPosition]);
+             				currentPosition += 4;
+             				string stringValue(&bsonData[currentPosition], stringSize - 1); // Exclude null terminator
+             				currentPosition += stringSize;
+             				array.push_back(stringValue);
+             				break;
+             			}
+                    case INT32: 
+                            { // 32-bit integer
+             					currentPosition += 2;
+             					int intValue = littleEndianToInt(&bsonData[currentPosition]);
+             					currentPosition += 4;
+             					array.push_back(intValue);
+             					break;
+             				}
+                    case INT64:
+                            {
+								currentPosition += 2;
+								long longValue = littleEndianToInt(&bsonData[currentPosition]);
+								currentPosition += 4;
+								array.push_back(longValue);
+								break;
+							}
+                    case BOOL:
+                            {
+                                currentPosition += 2;
+                                bool boolValue = bsonData[currentPosition] != 0x00;
+                                currentPosition++;
+                                array.push_back(boolValue);
+                                break;
+
+                            }
+             						 
+             		default:
+             		    cout << "Unhandled array element type: " << static_cast<int>(elementType) << endl;
+             			break;
+                 }
+             }
+                       
+             json[fieldname]= array;
+             break;
+        }
+        
+        case BINDATA:
+        { // Binary data
+            int binarySize = littleEndianToInt(&bsonData[currentPosition]);
+            currentPosition += 4;
+
+            // Skipping binary data handling for simplicity in this example
+            // 			currentPosition += binarySize;
+            // 			break;
+            // 		}}
+        }
+        case BOOL:
+		{ // Boolean
+        			bool boolValue = bsonData[currentPosition] != 0x00;
+        			currentPosition++;
+        			json[fieldname] = boolValue;
+        			break;
+        }
+        case INT32:
+        {
+			int intValue = littleEndianToInt(&bsonData[currentPosition]);
+			currentPosition += 4;
+			json[fieldname] = intValue;
+			break;
+        }
+        case INT64:
+        {
+			long longValue = littleEndianToInt(&bsonData[currentPosition]);
+			currentPosition += 4;
+			json[fieldname] = longValue;
+			break;
+		}
+        case NULLTYPE:
+        {
+            json[fieldname] = NULL;
+
+        }
+        case OBJECTID:
+        {   
+			currentPosition += 12;
+			break;
+		}
+        case DATE:
+        {
+            currentPosition += 8;
+        }
+        case REGEX:
+        {
+			int regexSize = 0;
+            while (bsonData[currentPosition + regexSize] != 0x00)
+            {
+				regexSize++;
+			}
+			currentPosition += regexSize + 1;
+            while (bsonData[currentPosition + regexSize] != 0x00)
+            {
+				regexSize++;
+			}
+			currentPosition += regexSize + 1;
+			break;
+		}
+        case DBPOINTER:
+        {
+
+            currentPosition += 12;
+            break;
+        }
+        case JAVASCRIPT:
+        {
+			int stringSize = littleEndianToInt(&bsonData[currentPosition]);
+			currentPosition += 4;
+			string stringValue(&bsonData[currentPosition], stringSize - 1); // Exclude null terminator
+			currentPosition += stringSize;
+			break;
+		}
+        case  SYMBOL:
+        {
+
+            int stringSize = littleEndianToInt(&bsonData[currentPosition]);
+			currentPosition += 4;
+			string stringValue(&bsonData[currentPosition], stringSize - 1); // Exclude null terminator
+			currentPosition += stringSize;
+			break;
+        }
+        case JAVASCRIPTWITHSCOPE:
+        {
+
+            int stringSize = littleEndianToInt(&bsonData[currentPosition]);
+            currentPosition += 4;
+            string stringValue(&bsonData[currentPosition], stringSize - 1); // Exclude null terminator
+            currentPosition += stringSize;
+        }
+        case OBJECT:
+        {
+
+
+        }
+        default:
+			break;
+        }
+
+
+
+        
+    }
+
+
+
+     while (index < size)
+ {
+     while (json[index] == ' ' || json[index] == ',')
+         index++;
+
+     string key;
+     while (json[index] != ':')
+     {
+         key += json[index];
+         index++;
+     }
+     index++;
+     while (json[index] == ' ')
+     {
+         index++;
+     }
+     if (json[index] == '"')
+     {
+         index++;
+         string value;
+         while (json[index] != '"')
+         {
+             value += json[index];
+             index++;
+         }
+         index++;
+         obj[key] = value;
+     }
+     else if (json[index] == '[')
+     {
+         index++;
+         vector<JsonValue> array;
+         while (json[index] != ']')
+         {
+             if (json[index] == '"')
+             {
+                 index++;
+                 string value;
+                 while (json[index] != '"')
+                 {
+                     value += json[index];
+                     index++;
+                 }
+                 index++;
+                 array.push_back(value);
+             }
+             else if (json[index] == ' ')
+             {
+                 index++;
+             }
+             else if (json[index] == ',')
+             {
+                 index++;
+             }
+             else if (json[index] == 't')
+             {
+                 index += 4;
+                 array.push_back(true);
+             }
+             else if (json[index] == 'f')
+             {
+                 index += 5;
+                 array.push_back(false);
+             }
+             else if (json[index] == 'n')
+             {
+                 index += 4;
+                 array.push_back(NULL);
+             }
+             else if (json[index] == '{')
+             {
+                 index++;
+                 unordered_map<string, JsonValue> obj1 = JSON_to_memory(json.substr(index, json.find('}', index) - index + 1));
+                 array.push_back(obj1);
+                 index = json.find('}', index) + 1;
+             }
+             else if (json[index] == ']')
+             {
+                 index++;
+                 break;
+             }
+             else
+             {
+                 string value;
+                 while (json[index] != ',' && json[index] != ']')
+                 {
+                     value += json[index];
+                     index++;
+                 }
+                 array.push_back(stoi(value));
+             }
+         }
+         index++;
+         obj[key] = array;
+     }
+     else if (json[index] == '{')
+     {
+         /*index++;
+         unordered_map<string, JsonValue> obj1 = JSON_to_memory(json.substr(index, json.find('}', index) - index + 1));
+         obj[key] = obj1;
+         index*/
+     }
+
+ }
